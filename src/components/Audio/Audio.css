@@ -107,3 +107,107 @@ button:hover {
   height: 100%;
   object-fit: cover; /* or 'contain' depending on your preference */
 }
+
+/* Status indicator styles */
+.status-indicator {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 8px 16px;
+  background-color: #f5f5f5;
+  border-radius: 20px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #aaa;
+  margin-right: 10px;
+  transition: background-color 0.3s ease;
+}
+
+.status-dot.recording {
+  background-color: #f44336; /* Red for recording */
+  box-shadow: 0 0 0 rgba(244, 67, 54, 0.4);
+  animation: pulse 2s infinite;
+}
+
+.status-dot.processing {
+  background-color: #ff9800; /* Orange for processing */
+  animation: blink 1s infinite;
+}
+
+/* Initialization spinner and container */
+.init-status-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.init-spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: #646464;
+  animation: spin 1s ease-in-out infinite;
+  margin-bottom: 20px;
+}
+
+.init-progress-text {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #666;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(244, 67, 54, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
+  }
+}
+
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* Response text styling */
+.response-text {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-radius: 10px;
+  border-left: 4px solid #646464;
+  max-height: 200px;
+  overflow-y: auto;
+  width: 100%;
+  text-align: left;
+}
+
+/* Error message styling */
+.error-message {
+  margin: 10px 0;
+  padding: 10px 15px;
+  background-color: #ffebee;
+  color: #d32f2f;
+  border-radius: 5px;
+  border-left: 4px solid #d32f2f;
+  width: 100%;
+  text-align: left;
+}
