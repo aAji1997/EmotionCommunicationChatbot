@@ -1,0 +1,22 @@
+.emotion-wheel-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: visible; /* Allow content to overflow if needed */
+}
+
+.emotion-wheel-plot {
+  width: 100%;
+  height: 100%;
+  overflow: visible; /* Allow content to overflow if needed */
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .emotion-wheel-container {
+    transform: scale(0.8);
+  }
+}

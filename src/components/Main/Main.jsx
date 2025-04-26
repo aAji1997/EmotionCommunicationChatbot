@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState, useRef } from 'react'
 import './Main.css'
 import { assets } from '../../assets/assets'
 import { Context } from '../../context/context'
+import EmotionWheel from '../EmotionWheel/EmotionWheel'
 import { useNavigate } from 'react-router-dom';
 import { preInitialize, checkInitializationStatus, logout } from '../../services/api';
 
@@ -205,10 +206,10 @@ const Main = () => {
         }
     };
 
-    // Function to render emotion data if available
-    const renderEmotionData = () => {
+    // Function to get top emotions (used for accessibility and screen readers)
+    const getTopEmotions = () => {
         if (!emotions || !emotions.user || Object.keys(emotions.user).length === 0) {
-            return null;
+            return { user: null, assistant: null };
         }
 
         // Get the top emotion for user and assistant
@@ -218,14 +219,10 @@ const Main = () => {
         const topAssistantEmotion = Object.entries(emotions.assistant)
             .sort((a, b) => b[1] - a[1])[0];
 
-        return (
-            <div className="emotion-summary">
-                <p>
-                    You seem to be feeling <strong>{topUserEmotion[0]}</strong>
-                    while the assistant is expressing <strong>{topAssistantEmotion[0]}</strong>
-                </p>
-            </div>
-        );
+        return {
+            user: topUserEmotion[0],
+            assistant: topAssistantEmotion[0]
+        };
     };
 
   return (
@@ -310,8 +307,7 @@ const Main = () => {
             </>
             ) : (
                 <div className="result">
-                    {renderEmotionData()}
-
+                    {/* Chat messages */}
                     {chatHistory.map((msg, index) => (
                         <div key={index} className="result-title">
                         <img src={msg.sender === "user" ? assets.user_icon : assets.logo_icon} alt="avatar" />
@@ -324,6 +320,21 @@ const Main = () => {
                         <div className="result-title">
                         <img src={assets.logo_icon} alt="avatar" />
                         <p>{resultData}</p>
+                        </div>
+                    )}
+
+                    {/* Emotion wheel directly in the layout */}
+                    {emotions && emotions.user && Object.keys(emotions.user).length > 0 && (
+                        <div className="emotion-wheel-direct">
+                            <h3>Emotional State</h3>
+                            <div className="wheel-container">
+                                <EmotionWheel
+                                    key={`emotion-wheel-${JSON.stringify(emotions)}`}
+                                    emotions={emotions}
+                                    height={500}
+                                    width={500}
+                                />
+                            </div>
                         </div>
                     )}
                 </div>

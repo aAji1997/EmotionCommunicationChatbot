@@ -141,7 +141,15 @@ export const getEmotions = async (userId) => {
       throw new Error(errorData.error || 'Failed to get emotions');
     }
 
-    return await response.json();
+    const data = await response.json();
+
+    // Debug log to track emotion updates
+    console.log(`Fetched emotions for user ${userId}:`, {
+      user: Object.entries(data.user || {}).map(([k, v]) => `${k}: ${v.toFixed(2)}`).join(', '),
+      assistant: Object.entries(data.assistant || {}).map(([k, v]) => `${k}: ${v.toFixed(2)}`).join(', ')
+    });
+
+    return data;
   } catch (error) {
     console.error('Emotions error:', error);
     throw error;

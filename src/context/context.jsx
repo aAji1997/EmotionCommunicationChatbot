@@ -44,7 +44,17 @@ const ContextProvider = (props) => {
         const fetchEmotions = async () => {
             try {
                 const emotionData = await getEmotions(user.user_id);
-                setEmotions(emotionData);
+
+                // Debug: Log emotion data changes
+                console.log('Emotion data fetched:', JSON.stringify(emotionData));
+
+                // Check if the data is different from current state before updating
+                if (JSON.stringify(emotionData) !== JSON.stringify(emotions)) {
+                    console.log('Emotion data changed, updating state');
+                    setEmotions({...emotionData}); // Create a new object to ensure React detects the change
+                } else {
+                    console.log('Emotion data unchanged, skipping update');
+                }
             } catch (error) {
                 console.error("Error fetching emotions:", error);
             }
@@ -53,11 +63,17 @@ const ContextProvider = (props) => {
         // Initial fetch
         fetchEmotions();
 
-        // Set up interval for periodic updates
-        const intervalId = setInterval(fetchEmotions, 2000);
+        // Set up interval for periodic updates - even more frequent updates to ensure visualization works
+        const intervalId = setInterval(fetchEmotions, 500);  // Update every 500ms for more responsive visualization
+
+        // Log that polling has started
+        console.log("Started emotion polling for user:", user.user_id);
 
         // Clean up interval on unmount or when user changes
-        return () => clearInterval(intervalId);
+        return () => {
+            console.log("Stopped emotion polling");
+            clearInterval(intervalId);
+        };
     }, [user]);
 
     const delayPara = (index, nextWord) => {

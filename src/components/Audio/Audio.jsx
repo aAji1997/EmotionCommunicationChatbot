@@ -7,6 +7,7 @@ import { assets } from '../../assets/assets';
 import { Context } from '../../context/context';
 import DebugPanel from '../DebugPanel';
 import { socket } from '../../socket';
+import EmotionWheel from '../EmotionWheel/EmotionWheel';
 
 const Audiovisualizer = ({ analyser, recording }) => {
   const [levels, setLevels] = useState(new Array(16).fill(10));
@@ -73,47 +74,7 @@ const Audiovisualizer = ({ analyser, recording }) => {
   );
 };
 
-// Component to render the emotion wheel with real data
-const EmotionWheel = ({ emotions }) => {
-  // If no emotions data is available, use the static image
-  if (!emotions || !emotions.user || Object.keys(emotions.user).length === 0) {
-    return (
-      <div className='emotional_meter_image'>
-        <img src={assets.emotional_wheel} alt='Emotion Meter' />
-      </div>
-    );
-  }
-
-  // Otherwise, we could render a dynamic visualization based on the emotions data
-  // For now, we'll still use the static image but we could enhance this later
-  return (
-    <div className='emotional_meter_image'>
-      <img src={assets.emotional_wheel} alt='Emotion Meter' />
-      <div className='emotion-data'>
-        <div className='user-emotions'>
-          <h4>Your Emotions:</h4>
-          <ul>
-            {Object.entries(emotions.user).map(([emotion, value]) => (
-              <li key={emotion}>
-                {emotion}: {Math.round(value * 100) / 100}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className='assistant-emotions'>
-          <h4>Assistant Emotions:</h4>
-          <ul>
-            {Object.entries(emotions.assistant).map(([emotion, value]) => (
-              <li key={emotion}>
-                {emotion}: {Math.round(value * 100) / 100}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
-};
+// Legacy EmotionWheel component is now replaced by the imported EmotionWheel component
 
 const AudioPage = () => {
   const { user, emotions } = useContext(Context);
@@ -1219,10 +1180,19 @@ const AudioPage = () => {
         </div>
         )}
       </div>
-      <div className='Emotional-meter'>
-        <p>Emotion Wheel</p>
-        <EmotionWheel emotions={emotions} />
-      </div>
+      {emotions && emotions.user && Object.keys(emotions.user).length > 0 && (
+        <div className='emotion-wheel-direct'>
+          <h3>Emotional State</h3>
+          <div className="wheel-container">
+            <EmotionWheel
+              key={`emotion-wheel-${JSON.stringify(emotions)}`}
+              emotions={emotions}
+              height={500}
+              width={500}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

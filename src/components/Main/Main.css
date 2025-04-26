@@ -154,10 +154,34 @@
     padding: 0px 5%;
     max-height: 70vh;
     overflow-y: scroll;
+    display: flex;
+    flex-direction: column;
 }
 
 .result::-webkit-scrollbar{
     display: none;
+}
+
+/* Direct emotion wheel integration */
+.emotion-wheel-direct {
+    width: 100%;
+    margin: 40px auto;
+    text-align: center;
+    background-color: rgba(248, 248, 252, 0.7);
+    border-radius: 10px;
+    padding: 20px 0;
+}
+
+.emotion-wheel-direct h3 {
+    font-size: 20px;
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.wheel-container {
+    width: 500px;
+    height: 500px;
+    margin: 0 auto;
 }
 
 .result-title{
@@ -320,12 +344,14 @@
 }
 
 /* Emotion summary styles */
+
 .emotion-summary {
     background-color: #f0f4f9;
     padding: 10px 15px;
     border-radius: 8px;
     margin-bottom: 20px;
     text-align: center;
+    width: 100%;
 }
 
 .emotion-summary p {
@@ -335,4 +361,17 @@
 
 .emotion-summary strong {
     color: #3EECAC;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .wheel-container {
+        width: 100%;
+        max-width: 350px;
+        height: 350px;
+    }
+
+    .emotion-wheel-direct {
+        padding: 10px 0;
+    }
 }

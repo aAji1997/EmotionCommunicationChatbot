@@ -86,26 +86,41 @@ button:hover {
   display: flex;
   justify-content: flex-start;
 }
-.Emotional-meter {
-  position: absolute;
-  right: 20px;
-  bottom: 20px;
+/* Direct emotion wheel integration */
+.emotion-wheel-direct {
+  width: 100%;
+  margin: 40px auto;
   text-align: center;
-  height: 350px;
-  width: 500px;
+  background-color: rgba(248, 248, 252, 0.7);
+  border-radius: 10px;
+  padding: 20px 0;
 }
+
+.emotion-wheel-direct h3 {
+  font-size: 20px;
+  color: #333;
+  margin-bottom: 15px;
+}
+
+.wheel-container {
+  width: 500px;
+  height: 500px;
+  margin: 0 auto;
+}
+
+/* Legacy styles kept for backward compatibility */
 .emotional_meter_image {
-  background-color: grey;
   height: 100%;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
 .emotional_meter_image img {
   width: 100%;
   height: 100%;
-  object-fit: cover; /* or 'contain' depending on your preference */
+  object-fit: contain;
 }
 
 /* Status indicator styles */
@@ -210,4 +225,17 @@ button:hover {
   border-left: 4px solid #d32f2f;
   width: 100%;
   text-align: left;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .wheel-container {
+    width: 100%;
+    max-width: 350px;
+    height: 350px;
+  }
+
+  .emotion-wheel-direct {
+    padding: 10px 0;
+  }
 }
