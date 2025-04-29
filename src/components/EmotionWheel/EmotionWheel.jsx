@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Plotly from 'plotly.js-dist';
 import './EmotionWheel.css';
 
@@ -20,18 +20,42 @@ const EMOTION_COLORS = {
   "Anticipation": "#FFA500",  // Orange
 };
 
-// Helper function to convert hex to rgba
+// Helper function to convert hex to rgba - memoized for performance
+const hexToRgbaCache = {};
 const hexToRgba = (hex, alpha = 1) => {
+  // Use cached value if available
+  const cacheKey = `${hex}-${alpha}`;
+  if (hexToRgbaCache[cacheKey]) {
+    return hexToRgbaCache[cacheKey];
+  }
+
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  const result = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+
+  // Cache the result
+  hexToRgbaCache[cacheKey] = result;
+  return result;
 };
 
-// Helper function to generate a smooth polygon for the emotion wheel
+// Cache for polygon generation to improve performance
+const polygonCache = {};
+
+// Helper function to generate a smooth polygon for the emotion wheel - optimized with caching
 const generateSmoothPolygon = (emotionScores) => {
-  // Number of points to generate for the smooth polygon - more points for smoother curve
-  const numPoints = 48;
+  // Create a simplified cache key based on rounded emotion scores for better cache hits
+  const cacheKey = Object.entries(emotionScores)
+    .map(([emotion, score]) => `${emotion}:${Math.round(score * 10) / 10}`)
+    .join('|');
+
+  // Return cached result if available
+  if (polygonCache[cacheKey]) {
+    return polygonCache[cacheKey];
+  }
+
+  // Number of points - optimized for performance
+  const numPoints = 16; // Reduced for better performance
 
   // Generate points for the polygon
   const r = [];
@@ -56,18 +80,8 @@ const generateSmoothPolygon = (emotionScores) => {
     // Calculate the interpolation factor
     const factor = (i * 8 / numPoints) - emotionIndex1;
 
-    // Use cubic interpolation for smoother transitions between emotions
-    // This creates a more natural curve than linear interpolation
-    const t = factor;
-    const t2 = t * t;
-    const t3 = t2 * t;
-    const h1 = 2*t3 - 3*t2 + 1;  // Hermite basis function 1
-    const h2 = -2*t3 + 3*t2;     // Hermite basis function 2
-    const h3 = t3 - 2*t2 + t;    // Hermite basis function 3
-    const h4 = t3 - t2;          // Hermite basis function 4
-
-    // Use Hermite interpolation with zero tangents for a smoother curve
-    const interpolatedScore = h1 * score1 + h2 * score2;
+    // Use simple linear interpolation for better performance
+    const interpolatedScore = score1 + factor * (score2 - score1);
 
     // Add a small minimum value to ensure the polygon is visible even with zero scores
     const finalScore = Math.max(interpolatedScore, 0.1);
@@ -83,323 +97,380 @@ const generateSmoothPolygon = (emotionScores) => {
     theta.push(theta[0]);
   }
 
-  return { r, theta };
+  // Cache the result
+  const result = { r, theta };
+  polygonCache[cacheKey] = result;
+
+  // Limit cache size to prevent memory leaks
+  const cacheKeys = Object.keys(polygonCache);
+  if (cacheKeys.length > 50) {
+    delete polygonCache[cacheKeys[0]];
+  }
+
+  return result;
 };
 
 const EmotionWheel = ({ emotions, height = 400, width = 400 }) => {
   const plotRef = useRef(null);
-  const [currentUserEmotions, setCurrentUserEmotions] = useState({});
-  const [currentAssistantEmotions, setCurrentAssistantEmotions] = useState({});
-  const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
-  const animationRef = useRef(null);
-  const [forceUpdate, setForceUpdate] = useState(0); // Add a state variable to force updates
+  const lastEmotionsRef = useRef(null);
+  const lastUpdateTimeRef = useRef(Date.now());
+  const plotlyInitializedRef = useRef(false);
 
-  // Force a re-render every 2 seconds to ensure the wheel updates
-  useEffect(() => {
-    const forceUpdateInterval = setInterval(() => {
-      setForceUpdate(prev => prev + 1);
-      console.log("Forcing EmotionWheel update:", forceUpdate + 1);
-    }, 2000);
-
-    return () => clearInterval(forceUpdateInterval);
-  }, []);
-
-  // Initialize with default emotions
-  useEffect(() => {
-    setCurrentUserEmotions(CORE_EMOTIONS.reduce((acc, emotion) => {
-      acc[emotion] = 0;
-      return acc;
-    }, {}));
-
-    setCurrentAssistantEmotions(CORE_EMOTIONS.reduce((acc, emotion) => {
-      acc[emotion] = 0;
-      return acc;
-    }, {}));
-  }, []);
-
-  // We've removed the animation effect since it might be causing issues
-  // The emotions are now directly updated in the effect above
-
-  // Directly update the emotions when they change
-  useEffect(() => {
-    // Log the current emotions for debugging
-    console.log("EmotionWheel received new emotions:", emotions);
-
-    // Skip if emotions data is not valid
+  // Memoize the current emotions with smooth transitions
+  const { currentUserEmotions, currentAssistantEmotions } = useMemo(() => {
+    // Skip processing if emotions data is not valid
     if (!emotions || !emotions.user || !emotions.assistant) {
-      console.log("EmotionWheel: Invalid emotions data");
-      return;
+      return {
+        currentUserEmotions: CORE_EMOTIONS.reduce((acc, emotion) => {
+          acc[emotion] = 0;
+          return acc;
+        }, {}),
+        currentAssistantEmotions: CORE_EMOTIONS.reduce((acc, emotion) => {
+          acc[emotion] = 0;
+          return acc;
+        }, {})
+      };
     }
 
-    // Log the specific emotion values for debugging
-    console.log("User emotions:", Object.entries(emotions.user).map(([k, v]) => `${k}: ${v.toFixed(2)}`).join(', '));
-    console.log("Assistant emotions:", Object.entries(emotions.assistant).map(([k, v]) => `${k}: ${v.toFixed(2)}`).join(', '));
+    // Initialize last emotions if not already set
+    if (!lastEmotionsRef.current) {
+      lastEmotionsRef.current = {
+        user: {...emotions.user},
+        assistant: {...emotions.assistant}
+      };
+      lastUpdateTimeRef.current = Date.now();
 
-    // Immediately set the target values without animation
-    setCurrentUserEmotions({...emotions.user});
-    setCurrentAssistantEmotions({...emotions.assistant});
+      return {
+        currentUserEmotions: emotions.user,
+        currentAssistantEmotions: emotions.assistant
+      };
+    }
 
-    // Force a re-render by updating the last update time
-    setLastUpdateTime(Date.now());
+    // Check if we need to interpolate at all - if values are very close, just use new values
+    let needsInterpolation = false;
+
+    // Quick check on a few key emotions to see if interpolation is needed
+    for (const emotion of ['Joy', 'Trust', 'Fear']) {
+      if (Math.abs((lastEmotionsRef.current.user[emotion] || 0) - (emotions.user[emotion] || 0)) > 0.2 ||
+          Math.abs((lastEmotionsRef.current.assistant[emotion] || 0) - (emotions.assistant[emotion] || 0)) > 0.2) {
+        needsInterpolation = true;
+        break;
+      }
+    }
+
+    // If values are close enough, just use the new values directly
+    if (!needsInterpolation) {
+      return {
+        currentUserEmotions: emotions.user,
+        currentAssistantEmotions: emotions.assistant
+      };
+    }
+
+    // For larger changes, use a shorter transition for better responsiveness
+    const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
+    const transitionDuration = 200; // ms - reduced from 300ms
+
+    // Calculate interpolation factor (0 to 1)
+    const interpolationFactor = Math.min(1, timeSinceLastUpdate / transitionDuration);
+
+    // Create interpolated emotion objects - pre-allocate for better performance
+    const interpolatedUserEmotions = {...lastEmotionsRef.current.user};
+    const interpolatedAssistantEmotions = {...lastEmotionsRef.current.assistant};
+
+    // Only interpolate emotions that have changed significantly
+    for (const emotion of CORE_EMOTIONS) {
+      const oldUserValue = lastEmotionsRef.current.user[emotion] || 0;
+      const newUserValue = emotions.user[emotion] || 0;
+      if (Math.abs(newUserValue - oldUserValue) > 0.05) {
+        interpolatedUserEmotions[emotion] = oldUserValue + (newUserValue - oldUserValue) * interpolationFactor;
+      }
+
+      const oldAssistantValue = lastEmotionsRef.current.assistant[emotion] || 0;
+      const newAssistantValue = emotions.assistant[emotion] || 0;
+      if (Math.abs(newAssistantValue - oldAssistantValue) > 0.05) {
+        interpolatedAssistantEmotions[emotion] = oldAssistantValue + (newAssistantValue - oldAssistantValue) * interpolationFactor;
+      }
+    }
+
+    // If transition is complete, update the reference values
+    if (interpolationFactor >= 1) {
+      lastEmotionsRef.current = {
+        user: {...emotions.user},
+        assistant: {...emotions.assistant}
+      };
+      lastUpdateTimeRef.current = Date.now();
+
+      return {
+        currentUserEmotions: emotions.user,
+        currentAssistantEmotions: emotions.assistant
+      };
+    }
+
+    // Return interpolated values for smooth transition
+    return {
+      currentUserEmotions: interpolatedUserEmotions,
+      currentAssistantEmotions: interpolatedAssistantEmotions
+    };
   }, [emotions]);
 
-  // Create and update the plot
+  // Memoize the sector traces to avoid recreating them on every render
+  const sectorTraces = useMemo(() => {
+    const traces = [];
+
+    // Add emotion sectors
+    for (let i = 0; i < CORE_EMOTIONS.length; i++) {
+      const emotion = CORE_EMOTIONS[i];
+      const angle = i * 45;  // 360 / 8 = 45 degrees per emotion
+
+      // Add sector labels with improved positioning
+      let labelR = 3.6;  // Default distance
+      let labelTheta = angle;
+      let labelFont = {
+        color: EMOTION_COLORS[emotion],
+        size: 12,
+        family: 'Arial, sans-serif'
+      };
+
+      // Adjust specific labels that might overlap
+      if (['Sadness', 'Disgust', 'Fear', 'Surprise'].includes(emotion)) {
+        labelR = 3.7;
+      }
+
+      traces.push({
+        type: 'scatterpolar',
+        r: [labelR],
+        theta: [labelTheta],
+        text: [emotion],
+        mode: 'text',
+        textfont: labelFont,
+        showlegend: false
+      });
+
+      // Add colored sectors with improved styling - reduced points for better performance
+      const sectorTheta = [];
+      const sectorR = [];
+
+      // Create sector shape with minimal points for better performance
+      for (let j = 0; j < 8; j++) {  // Reduced from 15 to 8 points
+        sectorTheta.push(angle - 22.5 + j * 45 / 7);
+        sectorR.push(2.8);
+      }
+
+      traces.push({
+        type: 'scatterpolar',
+        r: sectorR,
+        theta: sectorTheta,
+        fill: 'toself',
+        fillcolor: hexToRgba(EMOTION_COLORS[emotion], 0.07),
+        line: {
+          color: hexToRgba(EMOTION_COLORS[emotion], 0.3),
+          width: 0.5,
+          dash: 'dot'
+        },
+        showlegend: false,
+        hoverinfo: 'none'
+      });
+    }
+
+    return traces;
+  }, []); // Empty dependency array means this only runs once
+
+  // Memoize the layout configuration
+  const plotLayout = useMemo(() => {
+    return {
+      polar: {
+        radialaxis: {
+          visible: true,
+          range: [0, 4.0],
+          showticklabels: false,
+          ticks: '',
+          showline: false,
+          showgrid: false
+        },
+        angularaxis: {
+          visible: true,
+          tickmode: 'array',
+          tickvals: Array.from({ length: 8 }, (_, i) => i * 45),
+          ticktext: Array(8).fill(''),
+          direction: 'clockwise',
+          rotation: 22.5,
+          showticklabels: false,
+          showline: false,
+          showgrid: false
+        },
+        bgcolor: 'rgba(248, 248, 252, 0.5)'
+      },
+      showlegend: true,
+      title: {
+        text: "",
+        font: {
+          family: 'Arial, sans-serif',
+          size: 0,
+          color: '#333'
+        },
+        y: 0.98
+      },
+      height: height,
+      width: width,
+      margin: {
+        l: 30,
+        r: 30,
+        t: 40,
+        b: 40
+      },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      legend: {
+        orientation: 'h',
+        y: -0.1,
+        x: 0.5,
+        xanchor: 'center',
+        font: {
+          family: 'Arial, sans-serif',
+          size: 12
+        },
+        bgcolor: 'rgba(255,255,255,0.7)',
+        bordercolor: 'rgba(0,0,0,0.1)',
+        borderwidth: 1
+      }
+    };
+  }, [height, width]);
+
+  // Use requestAnimationFrame for smoother updates
+  const animationFrameRef = useRef(null);
+
+  // Create and update the plot - optimized for smooth transitions
   useEffect(() => {
     if (!plotRef.current) return;
 
-    // Log the current state for debugging
-    console.log("Updating plot with:", {
-      currentUserEmotions,
-      currentAssistantEmotions,
-      timestamp: new Date().toISOString()
+    // Cancel any pending animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+
+    // Schedule the update on the next animation frame for smoother rendering
+    animationFrameRef.current = requestAnimationFrame(() => {
+
+    // Generate smooth polygons for user and assistant emotions
+    const userPolygon = generateSmoothPolygon(currentUserEmotions);
+    const assistantPolygon = generateSmoothPolygon(currentAssistantEmotions);
+
+    // Create traces array starting with the static sector traces
+    const traces = [...sectorTraces];
+
+    // Add user emotion polygon
+    traces.push({
+      type: 'scatterpolar',
+      r: userPolygon.r,
+      theta: userPolygon.theta,
+      fill: 'toself',
+      fillcolor: 'rgba(41,128,185,0.3)',
+      line: {
+        color: 'rgba(41,128,185,0.9)',
+        width: 2.5,
+        shape: 'spline'
+      },
+      name: "User Emotions",
+      hoverinfo: 'name'
     });
 
-    // Create the base figure
-    const createFigure = () => {
-      // Use the latest emotion data directly from the emotions prop if available
-      const userEmotions = emotions && emotions.user ? emotions.user : currentUserEmotions;
-      const assistantEmotions = emotions && emotions.assistant ? emotions.assistant : currentAssistantEmotions;
+    // Add assistant emotion polygon
+    traces.push({
+      type: 'scatterpolar',
+      r: assistantPolygon.r,
+      theta: assistantPolygon.theta,
+      fill: 'toself',
+      fillcolor: 'rgba(230,126,34,0.3)',
+      line: {
+        color: 'rgba(230,126,34,0.9)',
+        width: 2.5,
+        shape: 'spline'
+      },
+      name: "Assistant Emotions",
+      hoverinfo: 'name'
+    });
 
-      // Generate smooth polygons for user and assistant emotions
-      const userPolygon = generateSmoothPolygon(userEmotions);
-      const assistantPolygon = generateSmoothPolygon(assistantEmotions);
+    // Add markers only for significant emotions (threshold increased)
+    for (let i = 0; i < CORE_EMOTIONS.length; i++) {
+      const emotion = CORE_EMOTIONS[i];
+      const angle = i * 45;
 
-      // Create traces for the emotion wheel background
-      const traces = [];
-
-      // Add emotion sectors
-      for (let i = 0; i < CORE_EMOTIONS.length; i++) {
-        const emotion = CORE_EMOTIONS[i];
-        const angle = i * 45;  // 360 / 8 = 45 degrees per emotion
-
-        // Add sector labels with improved positioning
-        // Custom positioning for problematic labels
-        let labelR = 3.6;  // Default distance - reduced to fit in container
-        let labelTheta = angle;
-        let labelFont = {
-          color: EMOTION_COLORS[emotion],
-          size: 12,  // Smaller font size
-          family: 'Arial, sans-serif'
-        };
-
-        // Adjust specific labels that might overlap
-        if (emotion === 'Sadness') {
-          labelR = 3.7;  // Push out a bit more
-        } else if (emotion === 'Disgust') {
-          labelR = 3.7;
-        } else if (emotion === 'Fear') {
-          labelR = 3.7;
-        } else if (emotion === 'Surprise') {
-          labelR = 3.7;
-        }
-
+      // User peak - only show for significant emotions
+      const userScore = currentUserEmotions[emotion];
+      if (userScore > 1.5) {  // Increased threshold from 1.0 to 1.5
         traces.push({
           type: 'scatterpolar',
-          r: [labelR],
-          theta: [labelTheta],
-          text: [emotion],
-          mode: 'text',
-          textfont: labelFont,
-          showlegend: false
-        });
-
-        // Add colored sectors with improved styling
-        const sectorTheta = [];
-        const sectorR = [];
-
-        // Create a more refined sector shape
-        for (let j = 0; j < 30; j++) {  // More points for smoother curve
-          sectorTheta.push(angle - 22.5 + j * 45 / 29);
-          sectorR.push(2.8);  // Reduced radius for the outer edge to fit in container
-        }
-
-        traces.push({
-          type: 'scatterpolar',
-          r: sectorR,
-          theta: sectorTheta,
-          fill: 'toself',
-          fillcolor: hexToRgba(EMOTION_COLORS[emotion], 0.07),  // More subtle background
-          line: {
-            color: hexToRgba(EMOTION_COLORS[emotion], 0.3),  // More subtle border
-            width: 0.5,  // Thinner line
-            dash: 'dot'  // Dotted line for a more elegant look
+          r: [userScore],
+          theta: [angle],
+          mode: 'markers',  // Removed text to improve performance
+          marker: {
+            size: 8,
+            color: 'rgba(41,128,185,1)',
+            symbol: 'circle',
+            line: {
+              color: 'white',
+              width: 1
+            }
           },
           showlegend: false,
-          hoverinfo: 'none'  // No hover info for cleaner interaction
+          hoverinfo: 'text',
+          hovertext: `User: ${emotion} (${userScore.toFixed(1)})`,
+          name: `User ${emotion}`
         });
       }
 
-      // Add user emotion polygon with improved styling
-      traces.push({
-        type: 'scatterpolar',
-        r: userPolygon.r,
-        theta: userPolygon.theta,
-        fill: 'toself',
-        fillcolor: 'rgba(41,128,185,0.3)',  // More professional blue
-        line: {
-          color: 'rgba(41,128,185,0.9)',
-          width: 2.5,
-          shape: 'spline'  // Smoother lines
-        },
-        name: "User Emotions",
-        hoverinfo: 'name'  // Cleaner hover info
-      });
-
-      // Add assistant emotion polygon with improved styling
-      traces.push({
-        type: 'scatterpolar',
-        r: assistantPolygon.r,
-        theta: assistantPolygon.theta,
-        fill: 'toself',
-        fillcolor: 'rgba(230,126,34,0.3)',  // More professional orange
-        line: {
-          color: 'rgba(230,126,34,0.9)',
-          width: 2.5,
-          shape: 'spline'  // Smoother lines
-        },
-        name: "Assistant Emotions",
-        hoverinfo: 'name'  // Cleaner hover info
-      });
-
-      // Add markers for the peak emotions with improved styling
-      for (let i = 0; i < CORE_EMOTIONS.length; i++) {
-        const emotion = CORE_EMOTIONS[i];
-        const angle = i * 45;
-
-        // User peak - only show for significant emotions (threshold increased)
-        const userScore = currentUserEmotions[emotion];
-        if (userScore > 1.0) {  // Only show stronger emotions
-          traces.push({
-            type: 'scatterpolar',
-            r: [userScore],
-            theta: [angle],
-            mode: 'markers+text',
-            text: [emotion],  // Show emotion name at peak
-            textposition: 'middle center',
-            textfont: {
-              size: 10,
-              color: 'rgba(41,128,185,1)'
-            },
-            marker: {
-              size: 8,
-              color: 'rgba(41,128,185,1)',
-              symbol: 'circle',
-              line: {
-                color: 'white',
-                width: 1
-              }
-            },
-            showlegend: false,
-            hoverinfo: 'text',
-            hovertext: `User: ${emotion} (${userScore.toFixed(1)})`,
-            name: `User ${emotion}`
-          });
-        }
-
-        // Assistant peak - only show for significant emotions
-        const assistantScore = currentAssistantEmotions[emotion];
-        if (assistantScore > 1.0) {  // Only show stronger emotions
-          traces.push({
-            type: 'scatterpolar',
-            r: [assistantScore],
-            theta: [angle],
-            mode: 'markers+text',
-            text: [emotion],  // Show emotion name at peak
-            textposition: 'middle center',
-            textfont: {
-              size: 10,
-              color: 'rgba(230,126,34,1)'
-            },
-            marker: {
-              size: 8,
-              color: 'rgba(230,126,34,1)',
-              symbol: 'circle',
-              line: {
-                color: 'white',
-                width: 1
-              }
-            },
-            showlegend: false,
-            hoverinfo: 'text',
-            hovertext: `Assistant: ${emotion} (${assistantScore.toFixed(1)})`,
-            name: `Assistant ${emotion}`
-          });
-        }
+      // Assistant peak - only show for significant emotions
+      const assistantScore = currentAssistantEmotions[emotion];
+      if (assistantScore > 1.5) {  // Increased threshold from 1.0 to 1.5
+        traces.push({
+          type: 'scatterpolar',
+          r: [assistantScore],
+          theta: [angle],
+          mode: 'markers',  // Removed text to improve performance
+          marker: {
+            size: 8,
+            color: 'rgba(230,126,34,1)',
+            symbol: 'circle',
+            line: {
+              color: 'white',
+              width: 1
+            }
+          },
+          showlegend: false,
+          hoverinfo: 'text',
+          hovertext: `Assistant: ${emotion} (${assistantScore.toFixed(1)})`,
+          name: `Assistant ${emotion}`
+        });
       }
+    }
 
-      // Layout configuration
-      const layout = {
-        polar: {
-          radialaxis: {
-            visible: true,
-            range: [0, 4.0],  // Adjusted range to fit in container better
-            showticklabels: false,
-            ticks: '',
-            showline: false,  // Hide the radial axis line for cleaner look
-            showgrid: false   // Hide the radial grid for cleaner look
-          },
-          angularaxis: {
-            visible: true,
-            tickmode: 'array',
-            tickvals: Array.from({ length: 8 }, (_, i) => i * 45),
-            ticktext: Array(8).fill(''),  // Remove default labels for cleaner look
-            direction: 'clockwise',
-            rotation: 22.5,  // Offset to align with emotion sectors
-            showticklabels: false,  // Hide the angular axis labels
-            showline: false,  // Hide the angular axis line
-            showgrid: false   // Hide the angular grid for cleaner look
-          },
-          bgcolor: 'rgba(248, 248, 252, 0.5)'  // Lighter, more subtle background
-        },
-        showlegend: true,
-        // Remove the title since we're adding it in the container
-        title: {
-          text: "",
-          font: {
-            family: 'Arial, sans-serif',
-            size: 0,
-            color: '#333'
-          },
-          y: 0.98  // Adjust title position
-        },
-        height: height,
-        width: width,
-        margin: {
-          l: 30,  // Reduced left margin
-          r: 30,  // Reduced right margin
-          t: 40,  // Reduced top margin
-          b: 40   // Reduced bottom margin
-        },
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        legend: {
-          orientation: 'h',  // Horizontal legend
-          y: -0.1,   // Position closer to the chart
-          x: 0.5,    // Center horizontally
-          xanchor: 'center',
-          font: {
-            family: 'Arial, sans-serif',
-            size: 12
-          },
-          bgcolor: 'rgba(255,255,255,0.7)',  // Semi-transparent background
-          bordercolor: 'rgba(0,0,0,0.1)',    // Light border
-          borderwidth: 1
-        }
-      };
+    // Create or update the plot with optimized config
+    if (!plotlyInitializedRef.current) {
+      // Initial plot creation
+      Plotly.newPlot(plotRef.current, traces, plotLayout, {
+        displayModeBar: false,
+        responsive: true,
+        staticPlot: false  // Keep interactivity for better user experience
+      });
+      plotlyInitializedRef.current = true;
+    } else {
+      // Use a more reliable update method that won't cause flickering
+      // Plotly.react is more reliable than Plotly.animate for this use case
+      Plotly.react(plotRef.current, traces, plotLayout, {
+        displayModeBar: false,
+        responsive: true,
+        staticPlot: false
+      });
+    }
+    });
 
-      return { data: traces, layout };
+    // Cleanup function to cancel animation frame when component unmounts
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
-
-    // Create the figure
-    const figure = createFigure();
-
-    // Create or update the plot
-    Plotly.react(plotRef.current, figure.data, figure.layout, { displayModeBar: false });
-
-    // Log successful update
-    console.log("Plot updated successfully");
-
-  }, [emotions, currentUserEmotions, currentAssistantEmotions, height, width, lastUpdateTime, forceUpdate]);
+  }, [currentUserEmotions, currentAssistantEmotions, sectorTraces, plotLayout]);
 
   return (
     <div className="emotion-wheel-container" style={{ width: '100%', height: '100%' }}>

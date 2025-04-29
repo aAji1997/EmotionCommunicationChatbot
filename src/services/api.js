@@ -12,7 +12,7 @@ const API_BASE_URL = 'http://localhost:5000/api';
  */
 export const login = async (username) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/users/login`, {
+    const response = await fetch(`${API_BASE_URL}/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -128,12 +128,34 @@ export const sendAudioData = async (audioBlob, userId, username) => {
 };
 
 /**
- * Get current emotion data
+ * Cache for emotion data to reduce API calls
+ */
+const emotionCache = {
+  data: null,
+  timestamp: 0,
+  userId: null,
+  cacheTimeout: 500 // 500ms cache timeout - balanced for responsiveness
+};
+
+/**
+ * Get current emotion data with caching
  * @param {string} userId - The user ID
  * @returns {Promise<Object>} - Emotion data for user and assistant
  */
 export const getEmotions = async (userId) => {
   try {
+    // Check if we have a valid cached result for this user
+    const now = Date.now();
+    if (
+      emotionCache.data &&
+      emotionCache.userId === userId &&
+      now - emotionCache.timestamp < emotionCache.cacheTimeout
+    ) {
+      // Use cached data
+      return emotionCache.data;
+    }
+
+    // Make the API request
     const response = await fetch(`${API_BASE_URL}/emotions?user_id=${userId}`);
 
     if (!response.ok) {
@@ -143,15 +165,24 @@ export const getEmotions = async (userId) => {
 
     const data = await response.json();
 
-    // Debug log to track emotion updates
-    console.log(`Fetched emotions for user ${userId}:`, {
-      user: Object.entries(data.user || {}).map(([k, v]) => `${k}: ${v.toFixed(2)}`).join(', '),
-      assistant: Object.entries(data.assistant || {}).map(([k, v]) => `${k}: ${v.toFixed(2)}`).join(', ')
-    });
+    // Validate the data
+    const hasValidUserEmotions = data.user && Object.keys(data.user).length > 0;
+    const hasValidAssistantEmotions = data.assistant && Object.keys(data.assistant).length > 0;
+
+    if (hasValidUserEmotions || hasValidAssistantEmotions) {
+      // Update the cache
+      emotionCache.data = data;
+      emotionCache.timestamp = now;
+      emotionCache.userId = userId;
+    }
 
     return data;
   } catch (error) {
     console.error('Emotions error:', error);
+    // Return cached data if available when there's an error
+    if (emotionCache.data && emotionCache.userId === userId) {
+      return emotionCache.data;
+    }
     throw error;
   }
 };

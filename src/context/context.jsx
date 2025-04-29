@@ -45,15 +45,40 @@ const ContextProvider = (props) => {
             try {
                 const emotionData = await getEmotions(user.user_id);
 
-                // Debug: Log emotion data changes
-                console.log('Emotion data fetched:', JSON.stringify(emotionData));
+                // More efficient comparison - check if any emotion value has changed significantly
+                let hasChanged = false;
 
-                // Check if the data is different from current state before updating
-                if (JSON.stringify(emotionData) !== JSON.stringify(emotions)) {
-                    console.log('Emotion data changed, updating state');
-                    setEmotions({...emotionData}); // Create a new object to ensure React detects the change
-                } else {
-                    console.log('Emotion data unchanged, skipping update');
+                // Check user emotions
+                if (emotionData.user && emotions.user) {
+                    for (const emotion in emotionData.user) {
+                        // Only update if the difference is significant (> 0.05) - more responsive
+                        if (!emotions.user[emotion] ||
+                            Math.abs(emotionData.user[emotion] - emotions.user[emotion]) > 0.05) {
+                            hasChanged = true;
+                            break;
+                        }
+                    }
+                } else if (emotionData.user) {
+                    hasChanged = true;
+                }
+
+                // Check assistant emotions if user emotions haven't changed
+                if (!hasChanged && emotionData.assistant && emotions.assistant) {
+                    for (const emotion in emotionData.assistant) {
+                        // Only update if the difference is significant (> 0.05) - more responsive
+                        if (!emotions.assistant[emotion] ||
+                            Math.abs(emotionData.assistant[emotion] - emotions.assistant[emotion]) > 0.05) {
+                            hasChanged = true;
+                            break;
+                        }
+                    }
+                } else if (emotionData.assistant) {
+                    hasChanged = true;
+                }
+
+                // Only update state if emotions have changed significantly
+                if (hasChanged) {
+                    setEmotions({...emotionData});
                 }
             } catch (error) {
                 console.error("Error fetching emotions:", error);
@@ -63,11 +88,8 @@ const ContextProvider = (props) => {
         // Initial fetch
         fetchEmotions();
 
-        // Set up interval for periodic updates - even more frequent updates to ensure visualization works
-        const intervalId = setInterval(fetchEmotions, 500);  // Update every 500ms for more responsive visualization
-
-        // Log that polling has started
-        console.log("Started emotion polling for user:", user.user_id);
+        // Set up interval for periodic updates - balanced for smooth updates and performance
+        const intervalId = setInterval(fetchEmotions, 800);  // Update every 800ms for smoother visualization while maintaining performance
 
         // Clean up interval on unmount or when user changes
         return () => {
